@@ -5,7 +5,7 @@ features of `archivemount`.
 
 ## Previews/Screenshots
 
-TBD
+[archivemount_p1.webm](https://github.com/user-attachments/assets/f5f8810b-cfbb-4054-b7c2-fa77ed4fc22c)
 
 ## Requirements
 
