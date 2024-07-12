@@ -137,7 +137,7 @@ return {
 
 		if action == "mount" then
 			if not valid_file(files[1], "mount") then
-				fail("Selected file is not a valid archive")
+				fail("Selected file is not a supported archive")
 				return
 			end
 

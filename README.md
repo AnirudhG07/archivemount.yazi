@@ -43,6 +43,11 @@ run  = "plugin archivemount --args=unmount"
 desc = "Unmount and save changes to original archive"
 ```
 
+## Which Archive files can you use?
+
+Check out the Man page for `archivemount` for more information. `archivemount.yazi` supports `.tar`, `.tar.gz`, `tgz`, `tar.bz2`. If you think more compressions types
+can be added, feel free to add it in your `init.lua` and make an issue/PR regarding it as well!:
+
 ## TODO
 
 Figure out on using MacFuse for archivemounting.
