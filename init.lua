@@ -136,12 +136,12 @@ return {
 		end
 
 		if action == "mount" then
-			local tmp_file = tmp(files[1])
 			if not valid_file(files[1], "mount") then
 				fail("Selected file is not a valid archive")
 				return
 			end
 
+			local tmp_file = tmp(files[1])
 			local cmd_args = "archivemount " .. table.concat(files, " ") .. " " .. tmp_file
 			local success, output = commad_runner(cmd_args)
 			if success then
