@@ -61,33 +61,27 @@ local function valid_file(path, action)
 	end
 	if action == "mount" then
 		-- Extract the file extension
-		local extension = path:match("^.+(%..+)$")
-
-		-- List of valid archive file extensions
 		local valid_extensions = {
-			".zip",
-			".rar",
-			".7z",
 			".tar",
-			".gz",
+			".tar.gz",
+			".tgz",
+			".tar.bz2",
 		}
 
-		-- Check if the extension is in the list of valid extensions
-		for _, ext in ipairs(valid_extensions) do
-			if extension == ext then
-				return true
+		-- Function to check if the file extension matches any of the valid extensions
+		local function has_valid_extension(extension)
+			for _, ext in ipairs(valid_extensions) do
+				if extension == ext or extension:find(ext .. "$") then
+					return true
+				end
 			end
-		end
-
-		return false
-	else
-		-- check if the path is an unmountable path
-		if not path:match("%.tmpXX%d+$") then
 			return false
 		end
-
+		-- Extract the file extension, including compound extensions like .tar.gz
+		local extension = path:match("^.+(%..+)$")
+		return has_valid_extension(extension)
+	else
 		-- Use os.execute to run a shell command that checks if the path is mounted
-		-- This example uses 'mount' command; adjust based on your needs
 		local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
 		local handle = io.popen(check_mount_cmd, "r")
 		if handle then
@@ -131,18 +125,17 @@ return {
 			notify("No files selected.")
 			return
 		elseif #files > 1 then
-			fail("Only 1 files can be (un)mounted at a time")
+			fail("Only 1 file can be (un)mounted at a time")
 			return
 		end
 
 		if action == "mount" then
 			if not valid_file(files[1], "mount") then
-				fail("Selected file is not a supported archive")
+				fail("Selected file is not a valid/supported archive")
 				return
 			end
-
 			local tmp_file = tmp(files[1])
-			local cmd_args = "archivemount " .. table.concat(files, " ") .. " " .. tmp_file
+			local cmd_args = "archivemount " .. table.concat(files, " ") .. " " .. ya.quote(tmp_file)
 			local success, output = commad_runner(cmd_args)
 			if success then
 				notify("Mounting successful. Please unmount back the tmp file created.")
@@ -157,12 +150,12 @@ return {
 				return
 			end
 
-			local cmd_args = "fusermount -u " .. tmp_file
+			local cmd_args = "fusermount -u " .. ya.quote(tmp_file)
 			local success, err = commad_runner(cmd_args)
 			if success then
 				notify("Unmounting successful")
 			end
-			local deleted, err = commad_runner("rm -rf " .. tmp_file)
+			local deleted, err = commad_runner("rm -rf " .. ya.quote(tmp_file))
 			if not deleted then
 				fail("Cannot delete tmp file %s", tmp_file)
 				return
