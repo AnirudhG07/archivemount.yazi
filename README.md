@@ -11,7 +11,7 @@ features of `archivemount`.
 
 > [!Note]
 >
-> Currently Linux only. MacOS usage will be added shortly
+> Currently Linux only. MacOS usage will be added.
 
 1. [archivemount](https://github.com/cybernoid/archivemount)
 
@@ -49,5 +49,5 @@ Check out the Man page for `archivemount` for more information. `archivemount.ya
 can be added, feel free to add it in your `init.lua` and make an issue/PR regarding it as well!:
 
 ## TODO
-
-Figure out on using MacFuse for archivemounting.
+1. Add UI to tell if file is mountpoint or not ( function for it is ready, only UI to configure)
+2. Application on MacOS which uses MacFuse for archivemounting.

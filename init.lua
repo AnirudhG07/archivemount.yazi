@@ -101,19 +101,19 @@ local function valid_file(path, action)
 end
 
 local function tmp(path)
-	local count = 0
-	local cmd_args = "mkdir " .. path .. ".tmpXX"
+	-- tmp file name based on hex current time to make it unique and no bugs then ig
+	local time_now = os.time()
+	local hex_time = string.format("%x", time_now)
+	local tmp_path = path .. ".tmp" .. hex_time
 
-	while true do
-		cmd_args = cmd_args .. count
-		local output, err = commad_runner(cmd_args)
-		if output then
-			break
-		else
-			count = count + 1
-		end
+	local cmd_args = "mkdir " .. tmp_path
+
+	local output, err = commad_runner(cmd_args)
+	if not output then
+		fail("Cannot create tmp file %s", tmp_path)
+		return
 	end
-	return path .. ".tmpXX" .. count
+	return tmp_path
 end
 
 return {
