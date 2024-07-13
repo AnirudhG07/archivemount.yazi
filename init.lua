@@ -54,6 +54,20 @@ local function commad_runner(cmd_args)
 	end
 end
 
+local function check_mount(path)
+	local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
+	local handle = io.popen(check_mount_cmd, "r")
+	if handle then
+		local output = handle:read("*a") -- Read the entire output
+		handle:close()
+		if output and output ~= "" then
+			return true -- Path is mounted
+		else
+			return false -- Path is not mounted
+		end
+	end
+end
+
 local function valid_file(path, action)
 	-- Check if path is not nil or empty
 	if not path or path == "" then
@@ -81,18 +95,8 @@ local function valid_file(path, action)
 		local extension = path:match("^.+(%..+)$")
 		return has_valid_extension(extension)
 	else
-		-- Use os.execute to run a shell command that checks if the path is mounted
-		local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
-		local handle = io.popen(check_mount_cmd, "r")
-		if handle then
-			local output = handle:read("*a") -- Read the entire output
-			handle:close()
-			if output and output ~= "" then
-				return true -- Path is mounted
-			else
-				return false -- Path is not mounted
-			end
-		end
+		local is_mount = check_mount(path)
+		return is_mount
 	end
 end
 
