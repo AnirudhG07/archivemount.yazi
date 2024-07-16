@@ -177,4 +177,5 @@ return {
 			return
 		end
 	end,
+	setup = setup,
 }
