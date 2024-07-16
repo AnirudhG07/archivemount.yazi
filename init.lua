@@ -116,6 +116,16 @@ local function tmp(path)
 	return tmp_path
 end
 
+local function setup()
+	local files = selected_files() -- func to give path of hovered/select files in array
+	local is_mp = valid_file(files[1], "unmount") -- to check if directory is a valid mountpoint or not
+	if is_mp == true then
+		Header:children_add(function(self)
+			return ui.Line(" mountpoint ")
+		end, 1500, Header.LEFT)
+	end
+end
+
 return {
 	entry = function(_, args)
 		-- two args so far, mounting and unmounting
