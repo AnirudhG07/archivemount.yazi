@@ -117,13 +117,19 @@ local function tmp(path)
 end
 
 local function setup()
-	local files = selected_files() -- func to give path of hovered/select files in array
-	local is_mp = valid_file(files[1], "unmount") -- to check if directory is a valid mountpoint or not
-	if is_mp == true then
-		Header:children_add(function(self)
-			return ui.Line(" mountpoint ")
-		end, 1500, Header.LEFT)
+	local function getmp()
+		local files = selected_files() -- func to give path of hovered/select files in array
+		local is_mp = valid_file(files[1], "unmount")
+		local is_archive = valid_file(files[1], "mount") -- to check if directory is a valid mountpoint or not
+
+		local mount_text = ""
+		if is_mp == true and is_archive == false then
+			mount_text = " <mountpoint> "
+		end
+		return ui.Line(string.format("%s", mount_text))
 	end
+
+	Header:children_add(getmp, 5000, Header.Left)
 end
 
 return {
