@@ -1,7 +1,7 @@
 # archivemount.yazi
 
 Mounting and unmounting archives in yazi in Linux using `archivemount` command. You can now temporarily view and edit files inside your archive creating a new archive along with original, all using the
-features of `archivemount`.
+features of `archivemount`. You can also view mounpoints in your system based on the list provided by command `mount` on Linux. 
 
 ## Previews/Screenshots
 
@@ -28,6 +28,10 @@ git clone https://github.com/AnirudhG07/archivemount.yazi ~/.config/yazi/plugins
 ```
 
 ## Usages
+To use the UI extension of `archivemount.yazi`, add the following in your `~/.config/yazi/init.lua` - 
+```lua
+require("archivemount"):setup() 
+```
 
 Add the following to your `keymaps.toml`.
 
@@ -49,5 +53,4 @@ Check out the Man page for `archivemount` for more information. `archivemount.ya
 can be added, feel free to add it in your `init.lua` and make an issue/PR regarding it as well!:
 
 ## TODO
-1. Add UI to tell if file is mountpoint or not ( function for it is ready, only UI to configure)
-2. Application on MacOS which uses MacFuse for archivemounting.
+1. Application on MacOS which uses MacFuse for archivemounting.
