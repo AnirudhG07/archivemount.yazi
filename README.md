@@ -24,6 +24,8 @@ You can download the command using `sudo apt install archivemount` or build from
 To install `archivemount.yazi` in Linux, you can run the below command -
 
 ```bash
+ya pack -a AnirudhG07/archivemount.yazi
+# OR
 git clone https://github.com/AnirudhG07/archivemount.yazi ~/.config/yazi/plugins/archivemount.yazi
 ```
 
@@ -51,7 +53,7 @@ desc = "Unmount and save changes to original archive"
 
 ## Which Archive files can you use?
 
-Check out the Man page for `archivemount` for more information. `archivemount.yazi` supports `.tar`, `.tar.gz`, `tgz`, `tar.bz2`. If you think more compressions types
+Check out the Man page for `archivemount` for more information. `archivemount.yazi` supports `.tar`, `.tar.gz`, `tgz`, `tar.bz2` and `.zip`(this may throw Warnings in yazi preview, You need to rename your zip output to tar). If you think more compressions types
 can be added, feel free to add it in your `init.lua` and make an issue/PR regarding it as well!:
 
 ## Explore Yazi
