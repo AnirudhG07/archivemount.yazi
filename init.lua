@@ -62,6 +62,7 @@ local function valid_file(path, action)
 	if action == "mount" then
 		-- Extract the file extension
 		local valid_extensions = {
+			".zip",
 			".tar",
 			".tar.gz",
 			".tgz",
@@ -169,8 +170,11 @@ return {
 			if success then
 				notify("Unmounting successful")
 			end
-			local deleted, err = commad_runner("rm -rf " .. ya.quote(tmp_file))
-			if not deleted then
+
+			local cleanup_args = "rm -rf " .. ya.quote(tmp_file)
+
+			local cleanup, err = commad_runner(cleanup_args)
+			if not cleanup then
 				fail("Cannot delete tmp file %s", tmp_file)
 				return
 			end
