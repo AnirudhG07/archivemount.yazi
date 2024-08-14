@@ -54,20 +54,6 @@ local function commad_runner(cmd_args)
 	end
 end
 
-local function check_mount(path)
-	local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
-	local handle = io.popen(check_mount_cmd, "r")
-	if handle then
-		local output = handle:read("*a") -- Read the entire output
-		handle:close()
-		if output and output ~= "" then
-			return true -- Path is mounted
-		else
-			return false -- Path is not mounted
-		end
-	end
-end
-
 local function valid_file(path, action)
 	-- Check if path is not nil or empty
 	if not path or path == "" then
@@ -83,25 +69,33 @@ local function valid_file(path, action)
 		}
 
 		-- Function to check if the file extension matches any of the valid extensions
-		local function has_valid_extension(extension)
+		local function has_valid_extension(path)
 			for _, ext in ipairs(valid_extensions) do
-				if extension == ext or extension:find(ext .. "$") then
+				if path:find(ext .. "$") then
 					return true
 				end
 			end
 			return false
 		end
 		-- Extract the file extension, including compound extensions like .tar.gz
-		local extension = path:match("^.+(%..+)$")
-		return has_valid_extension(extension)
+		return has_valid_extension(path)
 	else
-		local is_mount = check_mount(path)
-		return is_mount
+		-- Use os.execute to run a shell command that checks if the path is mounted
+		local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
+		local handle = io.popen(check_mount_cmd, "r")
+		if handle then
+			local output = handle:read("*a") -- Read the entire output
+			handle:close()
+			if output and output ~= "" then
+				return true -- Path is mounted
+			else
+				return false -- Path is not mounted
+			end
+		end
 	end
 end
 
 local function tmp(path)
-	-- tmp file name based on hex current time to make it unique and no bugs then ig
 	local time_now = os.time()
 	local hex_time = string.format("%x", time_now)
 	local tmp_path = path .. ".tmp" .. hex_time
