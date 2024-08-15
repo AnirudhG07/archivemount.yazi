@@ -96,6 +96,30 @@ local function valid_file(path, action)
 	end
 end
 
+local function file_exists(filename)
+	local file = io.open(filename, "r")
+	if file then
+		file:close()
+		return true
+	else
+		return false
+	end
+end
+
+local function rename_zip_to_tar(filename)
+	local zip_file = filename .. ".zip"
+	local orig_file = filename .. ".zip.orig"
+	local tar_file = filename .. ".tar"
+
+	-- Check if both files exist
+	if file_exists(zip_file) and file_exists(orig_file) then
+		local success, err = os.rename(zip_file, tar_file)
+		if not success then
+			fail("Error renaming zip file: " .. err)
+		end
+	end
+end
+
 local function tmp(path)
 	local time_now = os.time()
 	local hex_time = string.format("%x", time_now)
@@ -166,17 +190,24 @@ return {
 			end
 
 			local cmd_args = "fusermount -u " .. ya.quote(tmp_file)
-			local success, err = commad_runner(cmd_args)
-			if success then
-				notify("Unmounting successful")
+			local success_message = "Unmounting successful"
+
+			local zip_index = tmp_file:find(".zip.tmp.*")
+			local zip_fn = tmp_file
+			if zip_index then
+				zip_fn = zip_fn:sub(1, zip_index - 1)
+				rename_zip_to_tar(zip_fn)
+				success_message = success_message .. ". Note: Unmounted .zip file is converted to .tar"
 			end
 
-			local cleanup_args = "rm -rf " .. ya.quote(tmp_file)
+			local success, err = commad_runner(cmd_args)
+			if success then
+				notify(success_message)
+			end
 
-			local cleanup, err = commad_runner(cleanup_args)
-			if not cleanup then
+			local deleted, err = os.remove(tmp_file)
+			if not deleted then
 				fail("Cannot delete tmp file %s", tmp_file)
-				return
 			end
 			return
 		end
