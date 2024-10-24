@@ -24,7 +24,7 @@ You can download the command using `sudo apt install archivemount` or build from
 To install `archivemount.yazi` in Linux, you can run the below command -
 
 ```bash
-ya pack -a AnirudhG07/archivemount.yazi
+ya pack -a AnirudhG07/archivemount
 # OR
 git clone https://github.com/AnirudhG07/archivemount.yazi ~/.config/yazi/plugins/archivemount.yazi
 ```
