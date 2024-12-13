@@ -66,7 +66,7 @@ Yazi is an amazing, blazing fast terminal file manager, with a variety of plugin
 > This is not tested by me. Only an inspiration by people.
 > For any users, please test and provide feedback for the same.
 
-You can install `archivemount` on MacOS through `macports`, it available on Homebrew only on Linux(linuxbrew) -
+You can install `archivemount` on MacOS through `macports`, it is available on Homebrew only on Linux(linuxbrew) -
 ```
 sudo port install archivemount
 ```
