@@ -152,9 +152,9 @@ local function setup()
 end
 
 return {
-	entry = function(_, args)
+	entry = function(_, job)
 		-- two args so far, mounting and unmounting
-		local action = args[1]
+		local action = job.args[1]
 		if not action then
 			return
 		end
