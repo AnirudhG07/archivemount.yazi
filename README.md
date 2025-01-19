@@ -1,5 +1,10 @@
 # archivemount.yazi
 
+> [!Important]
+> 
+> For nightly build users for yazi v0.4.3(not yet released). The `init.lua` file should be renamed to `main.lua` (check [#2176](https://github.com/sxyazi/yazi/pull/2168)).
+> Please rename `init.lua` to `main.lua` in case you are facing any issues! Thanks!
+
 Mounting and unmounting archives in yazi in Linux using `archivemount` command. You can now temporarily view and edit files inside your archive creating a new archive along with original, all using the
 features of `archivemount`. You can also view mounpoints in your system based on the list provided by command `mount` on Linux.
 
