@@ -22,7 +22,7 @@ features of `archivemount`. You can also view mounpoints in your system based on
 
 You can download the command using `sudo apt install archivemount` or build from source from their github repository.
 
-2. [Yazi](https://github.com/sxyazi/yazi) version >= 0.3.x
+2. [Yazi](https://github.com/sxyazi/yazi) version >= 0.4.x
 
 ## Installation
 
