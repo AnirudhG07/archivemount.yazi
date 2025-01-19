@@ -8,7 +8,7 @@ local function notify(str)
 end
 
 local function fail(s, ...)
-	ya.notify({ title = "archivemouting", content = string.format(s, ...), timeout = 3, level = "error" })
+	ya.notify({ title = "Archivemount", content = string.format(s, ...), timeout = 3, level = "error" })
 end
 
 local Shell_value = os.getenv("SHELL"):match(".*/(.*)")
@@ -27,7 +27,7 @@ local selected_files = ya.sync(function()
 	return paths
 end)
 
-local function commad_runner(cmd_args)
+local function command_runner(cmd_args)
 	local cwd = state()
 	local child, err = Command(Shell_value)
 		:args({ "-c", cmd_args })
@@ -38,16 +38,16 @@ local function commad_runner(cmd_args)
 		:spawn()
 
 	if not child then
-		fail("Spawn `archivemouting` failed with error code %s. Do you have `tag` installed?", err)
+		fail("Spawn `archivemounting` failed with error code %s. Do you have `tag` installed?", err)
 		return err, child
 	end
 
 	local output, err = child:wait_with_output()
 	if not output then
-		fail("Cannot read `archivemouting` output, error code %s", err)
+		fail("Cannot read `archivemounting` output, error code %s", err)
 		return err, child
 	elseif not output.status.success and output.status.code ~= 131 then
-		fail("`archivemouting` exited with error code %s", output.status.code)
+		fail("`archivemounting` exited with error code %s", output.status.code)
 		return output.status.code, output
 	else
 		return true, output
@@ -127,7 +127,7 @@ local function tmp(path)
 
 	local cmd_args = "mkdir " .. tmp_path
 
-	local output, err = commad_runner(cmd_args)
+	local output, err = command_runner(cmd_args)
 	if not output then
 		fail("Cannot create tmp file %s", tmp_path)
 		return
@@ -175,7 +175,7 @@ return {
 			end
 			local tmp_file = tmp(files[1])
 			local cmd_args = "archivemount " .. table.concat(files, " ") .. " " .. ya.quote(tmp_file)
-			local success, output = commad_runner(cmd_args)
+			local success, output = command_runner(cmd_args)
 			if success then
 				notify("Mounting successful. Please unmount back the tmp file created.")
 			end
@@ -200,7 +200,7 @@ return {
 				success_message = success_message .. ". Note: Unmounted .zip file is converted to .tar"
 			end
 
-			local success, err = commad_runner(cmd_args)
+			local success, err = command_runner(cmd_args)
 			if success then
 				notify(success_message)
 			end
