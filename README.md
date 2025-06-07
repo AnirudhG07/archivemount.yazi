@@ -40,12 +40,12 @@ require("archivemount"):setup()
 Add the following to your `keymaps.toml`.
 
 ```toml
-[[manager.prepend_keymap]]
+[[mgr.prepend_keymap]]
 on   = [ "m", "a" ]
 run  = "plugin archivemount mount"
 desc = "Mount selected archive"
 
-[[manager.prepend_keymap]]
+[[mgr.prepend_keymap]]
 on   = [ "m", "u" ]
 run  = "plugin archivemount unmount"
 desc = "Unmount and save changes to original archive"
@@ -58,7 +58,7 @@ can be added, feel free to add it in your `main.lua` and make an issue/PR regard
 
 ## Explore Yazi
 
-Yazi is an amazing, blazing fast terminal file manager, with a variety of plugins, flavors and themes. Check them out at [awesome-yazi](https://github.com/AnirudhG07/awesome-yazi) and the official [yazi webpage](https://yazi-rs.github.io/).
+Yazi is an amazing, blazing fast terminal file mgr, with a variety of plugins, flavors and themes. Check them out at [awesome-yazi](https://github.com/AnirudhG07/awesome-yazi) and the official [yazi webpage](https://yazi-rs.github.io/).
 
 ## MacOS
 
