@@ -128,7 +128,7 @@ local function tmp(path)
 	local hex_time = string.format("%x", time_now)
 	local tmp_path = path .. ".tmp" .. hex_time
 
-	local cmd_args = "mkdir " .. tmp_path
+	local cmd_args = "mkdir " .. ya.quote(tmp_path)
 
 	local output, err = command_runner(cmd_args)
 	if not output then
@@ -177,7 +177,11 @@ return {
 				return
 			end
 			local tmp_file = tmp(files[1])
-			local cmd_args = "archivemount " .. table.concat(files, " ") .. " " .. ya.quote(tmp_file)
+			local quoted_files = {}
+			for i, f in ipairs(files) do
+				quoted_files[i] = ya.quote(f)
+			end
+			local cmd_args = "archivemount " .. table.concat(quoted_files, " ") .. " " .. ya.quote(tmp_file)
 			local success, output = command_runner(cmd_args)
 			if success then
 				notify("Mounting successful. Please unmount back the tmp file created.")
