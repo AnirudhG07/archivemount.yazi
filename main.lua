@@ -67,12 +67,15 @@ local function valid_file(path, action)
 			".tar.gz",
 			".tgz",
 			".tar.bz2",
+			".iso",
+			".7z",
+			".rar",
 		}
 
 		-- Function to check if the file extension matches any of the valid extensions
-		local function has_valid_extension(path)
+		local function has_valid_extension(_path)
 			for _, ext in ipairs(valid_extensions) do
-				if path:find(ext .. "$") then
+				if _path:find(ext .. "$") then
 					return true
 				end
 			end
@@ -203,11 +206,13 @@ return {
 			local success, err = command_runner(cmd_args)
 			if success then
 				notify(success_message)
+			else
+				fail("Unmounting failed with error code %s", err)
 			end
 
-			local deleted, err = os.remove(tmp_file)
+			local deleted, errd = os.remove(tmp_file)
 			if not deleted then
-				fail("Cannot delete tmp file %s", tmp_file)
+				fail("Cannot delete tmp file %s, error code %s", tmp_file, errd)
 			end
 			return
 		end
