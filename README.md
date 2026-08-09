@@ -3,6 +3,7 @@
 Mounting and unmounting archives in yazi in Linux using `archivemount` command. You can now temporarily view and edit files inside your archive creating a new archive along with original, all using the
 features of `archivemount`. You can also view mounpoints in your system based on the list provided by command `mount` on Linux.
 
+This fork is made for archivemount-ng with aded support for readonly mounts, additional format support and .orig file deletion options
 ## Previews/Screenshots
 
 [archivemount_p1.webm](https://github.com/user-attachments/assets/f5f8810b-cfbb-4054-b7c2-fa77ed4fc22c)
@@ -41,14 +42,24 @@ Add the following to your `keymaps.toml`.
 
 ```toml
 [[mgr.prepend_keymap]]
-on   = [ "m", "a" ]
+on   = [ "m", "a" , "w"]
 run  = "plugin archivemount mount"
-desc = "Mount selected archive"
+desc = "Mount selected archive with write support"
 
 [[mgr.prepend_keymap]]
-on   = [ "m", "u" ]
+on   = [ "m", "a" , "r"]
+run  = "plugin archivemount mount_ro"
+desc = "Mount selected archive read-only"
+
+[[mgr.prepend_keymap]]
+on   = [ "m", "a", "s" ]
 run  = "plugin archivemount unmount"
 desc = "Unmount and save changes to original archive"
+
+[[mgr.prepend_keymap]]
+on   = [ "m", "a", "d" ]
+run  = "plugin archivemount discard"
+desc = "Unmount and discard changes to original archive"
 ```
 
 ## Which Archive files can you use?
