@@ -63,6 +63,7 @@ local function valid_file(path, action)
 		-- Extract the file extension
 		local valid_extensions = {
 			".zip",
+			".cbz", -- zip-based comic archive
 			".tar",
 			".tar.gz",
 			".tgz",
@@ -82,7 +83,7 @@ local function valid_file(path, action)
 		return has_valid_extension(path)
 	else
 		-- Use os.execute to run a shell command that checks if the path is mounted
-		local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
+		local check_mount_cmd = "mount | grep '" .. ya.quote(path) .. "' 2>/dev/null" --added ya.quote because without it folders or files with special symbols would result in error
 		local handle = io.popen(check_mount_cmd, "r")
 		if handle then
 			local output = handle:read("*a") -- Read the entire output
@@ -106,19 +107,7 @@ local function file_exists(filename)
 	end
 end
 
-local function rename_zip_to_tar(filename)
-	local zip_file = filename .. ".zip"
-	local orig_file = filename .. ".zip.orig"
-	local tar_file = filename .. ".tar"
-
-	-- Check if both files exist
-	if file_exists(zip_file) and file_exists(orig_file) then
-		local success, err = os.rename(zip_file, tar_file)
-		if not success then
-			fail("Error renaming zip file: " .. err)
-		end
-	end
-end
+--Removed zip to tar rename, archivemount-ng works with zip directly
 
 local function tmp(path)
 	local time_now = os.time()
@@ -138,7 +127,12 @@ end
 local function setup()
 	local function getmp()
 		local files = selected_files() -- func to give path of hovered/select files in array
-		local is_mp = valid_file(files[1], "unmount")
+		local path = files[1]
+
+		--changing montpoint check logic to regex matching to stop mount | grep commands on each hover
+		--we defined how folders are named so we can just check names here
+		local is_mp = path ~= nul and path:match("%.tmp%x+$") ~= nil
+		-- local is_mp = valid_file(files[1], "unmount")
 		local is_archive = valid_file(files[1], "mount") -- to check if directory is a valid mountpoint or not
 
 		local mount_text = ""
@@ -198,6 +192,15 @@ return {
 				zip_fn = zip_fn:sub(1, zip_index - 1)
 				rename_zip_to_tar(zip_fn)
 				success_message = success_message .. ". Note: Unmounted .zip file is converted to .tar"
+			end
+
+			-- Removing .Trash folder in case yazi deletes to trash
+			local trash_cleanup_cmd = "find "
+				.. ya.quote(tmp_file)
+				.. " -maxdepth 1 -type d \\( -iname '.Trash-*' -o -iname '.Trash' \\) -exec rm -rf {} +"
+			local trash_ok, trash_err = command_runner(trash_cleanup_cmd)
+			if not trash_ok then
+				fail("Could not clean up trash dirs before unmounting: %s", tostring(trash_err))
 			end
 
 			local success, err = command_runner(cmd_args)
