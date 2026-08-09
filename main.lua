@@ -68,12 +68,15 @@ local function valid_file(path, action)
 			".tar.gz",
 			".tgz",
 			".tar.bz2",
+			".iso",
+			".7z",
+			".rar",
 		}
 
 		-- Function to check if the file extension matches any of the valid extensions
-		local function has_valid_extension(path)
+		local function has_valid_extension(_path)
 			for _, ext in ipairs(valid_extensions) do
-				if path:find(ext .. "$") then
+				if _path:find(ext .. "$") then
 					return true
 				end
 			end
@@ -114,7 +117,7 @@ local function tmp(path)
 	local hex_time = string.format("%x", time_now)
 	local tmp_path = path .. ".tmp" .. hex_time
 
-	local cmd_args = "mkdir " .. tmp_path
+	local cmd_args = "mkdir " .. ya.quote(tmp_path)
 
 	local output, err = command_runner(cmd_args)
 	if not output then
@@ -168,7 +171,11 @@ return {
 				return
 			end
 			local tmp_file = tmp(files[1])
-			local cmd_args = "archivemount " .. table.concat(files, " ") .. " " .. ya.quote(tmp_file)
+			local quoted_files = {}
+			for i, f in ipairs(files) do
+				quoted_files[i] = ya.quote(f)
+			end
+			local cmd_args = "archivemount " .. table.concat(quoted_files, " ") .. " " .. ya.quote(tmp_file)
 			local success, output = command_runner(cmd_args)
 			if success then
 				notify("Mounting successful. Please unmount back the tmp file created.")
@@ -206,11 +213,13 @@ return {
 			local success, err = command_runner(cmd_args)
 			if success then
 				notify(success_message)
+			else
+				fail("Unmounting failed with error code %s", err)
 			end
 
-			local deleted, err = os.remove(tmp_file)
+			local deleted, errd = os.remove(tmp_file)
 			if not deleted then
-				fail("Cannot delete tmp file %s", tmp_file)
+				fail("Cannot delete tmp file %s, error code %s", tmp_file, errd)
 			end
 			return
 		end
