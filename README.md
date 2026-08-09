@@ -1,9 +1,10 @@
 # archivemount.yazi
+This is the fork of  https://github.com/AnirudhG07/archivemount.yazi
+This fork is made for archivemount-ng with aded support for readonly mounts, additional format support and .orig file deletion options
 
 Mounting and unmounting archives in yazi in Linux using `archivemount` command. You can now temporarily view and edit files inside your archive creating a new archive along with original, all using the
 features of `archivemount`. You can also view mounpoints in your system based on the list provided by command `mount` on Linux.
 
-This fork is made for archivemount-ng with aded support for readonly mounts, additional format support and .orig file deletion options
 ## Previews/Screenshots
 
 [archivemount_p1.webm](https://github.com/user-attachments/assets/f5f8810b-cfbb-4054-b7c2-fa77ed4fc22c)
@@ -14,7 +15,7 @@ This fork is made for archivemount-ng with aded support for readonly mounts, add
 >
 > Currently, it works on Linux. Help wanted for MacOS!
 
-1. [archivemount](https://github.com/cybernoid/archivemount)
+1. [archivemount-ng](https://git.sr.ht/~nabijaczleweli/archivemount-ng)
 
 You can download the command using `sudo apt install archivemount` or build from source from their github repository.
 
@@ -27,16 +28,16 @@ To install `archivemount.yazi` in Linux, you can run the below command -
 ```bash
 ya pkg add AnirudhG07/archivemount
 # OR
-git clone https://github.com/AnirudhG07/archivemount.yazi ~/.config/yazi/plugins/archivemount.yazi
+git clone https://github.com/r00teniy/archivemount.yazi ~/.config/yazi/plugins/archivemount.yazi
 ```
-
 ## Usages
 
 To use the UI extension of `archivemount.yazi`, add the following in your `~/.config/yazi/main.lua` -
 
 ```lua
-require("archivemount"):setup()
+require("archivemount"):setup({ keep_orig_backup = true })
 ```
+default value for keep_orig_backup is true
 
 Add the following to your `keymaps.toml`.
 
@@ -64,8 +65,9 @@ desc = "Unmount and discard changes to original archive"
 
 ## Which Archive files can you use?
 
-Check out the Man page for `archivemount` for more information. `archivemount.yazi` supports `.tar`, `.tar.gz`, `tgz`, `tar.bz2` and `.zip`(The new file is a `.tar` file instead of `.zip` because `archivemount` command converts it so). If you think more compressions types
-can be added, feel free to add it in your `main.lua` and make an issue/PR regarding it as well!:
+this version supports:
+ Edit: .zip,.czb,.tar,.tar.gz,.tgz,.tar.bz2
+ Read-only: .7z,.cb7,.rar,.cbr,.iso(does not support winodws installation media)
 
 ## Explore Yazi
 
@@ -75,7 +77,7 @@ Yazi is an amazing, blazing fast terminal file mgr, with a variety of plugins, f
 
 > [!Important]
 >
-> This is not tested by me. Only an inspiration by people.
+> This is tested by me, but my tests were limited.
 > For any users, please test and provide feedback for the same.
 
 You can install `archivemount` on MacOS through `macports`, it is available on Homebrew only on Linux(linuxbrew) -

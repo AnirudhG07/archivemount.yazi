@@ -75,7 +75,7 @@ local function valid_file(path, action)
 			".tgz",
 			".tar.bz2",
 			--ro
-			--			".iso",
+			".iso",
 			".7z",
 			".cb7", -- 7z based comic arhive
 			".rar",
