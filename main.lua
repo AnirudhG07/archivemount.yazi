@@ -85,7 +85,7 @@ local function valid_file(path, action)
 		return has_valid_extension(path)
 	else
 		-- Use os.execute to run a shell command that checks if the path is mounted
-		local check_mount_cmd = "mount | grep '" .. path .. "' 2>/dev/null"
+		local check_mount_cmd = "mount | grep " .. ya.quote(path) .. " 2>/dev/null"
 		local handle = io.popen(check_mount_cmd, "r")
 		if handle then
 			local output = handle:read("*a") -- Read the entire output
