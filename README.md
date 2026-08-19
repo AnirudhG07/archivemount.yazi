@@ -35,9 +35,12 @@ git clone https://github.com/r00teniy/archivemount.yazi ~/.config/yazi/plugins/a
 To use the UI extension of `archivemount.yazi`, add the following in your `~/.config/yazi/main.lua` -
 
 ```lua
-require("archivemount"):setup({ keep_orig_backup = true })
+require("archivemount"):setup({
+	keep_orig_backup = false, --default = true
+	verify_content = true, --default = true
+	max_wait_time = 120 --default = 60 (because archivemount doesn't have separate unmount option we need to wait for it to finish writing zip file. 60 second is enough for ~1G file on my system
+})
 ```
-default value for keep_orig_backup is true
 
 Add the following to your `keymaps.toml`.
 

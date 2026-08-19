@@ -11,15 +11,55 @@ local function fail(s, ...)
 	ya.notify({ title = "Archivemount", content = string.format(s, ...), timeout = 3, level = "error" })
 end
 
--- Configurable option to delete orig file
-local config = {
+-- Default config values.
+local default_config = {
 	keep_orig_backup = true,
+	verify_content = true,
+	max_wait_time = 60,
 }
 
-local Shell_value = os.getenv("SHELL"):match(".*/(.*)")
-local state = ya.sync(function()
+local get_config = ya.sync(function(state)
+	return state.config or default_config
+end)
+
+-- Basename of the user's shell (e.g. "zsh", "bash"), used everywhere we
+-- need to run something through a real login-capable shell instead of
+-- Lua's io.popen default. Falls back to "sh" if $SHELL isn't set, and
+-- tolerates $SHELL not containing a "/" at all.
+local shell_env = os.getenv("SHELL") or "/bin/sh"
+local Shell_value = shell_env:match(".*/(.*)") or shell_env
+
+local get_cwd = ya.sync(function()
 	return tostring(cx.active.current.cwd)
 end)
+
+-- `fusermount -u` only detaches the mountpoint from the kernel's view; the
+-- archivemount (FUSE) process behind it can still be flushing pending
+-- writes back to the actual archive file for a moment afterward. Reading
+-- the archive (e.g. with bsdtar) before that flush finishes can see a
+-- partially-written/corrupt-looking file even though nothing is actually
+-- wrong. This polls for the specific archivemount process tied to
+-- `tmp_file` to disappear from the process table before we touch the
+-- archive, instead of assuming it's done the moment fusermount returns.
+local function wait_for_archivemount_exit(tmp_file, max_wait_time)
+	max_wait_time = tonumber(max_wait_time) or default_config.max_wait_time
+	local attempts = math.max(1, math.floor(max_wait_time / 0.1))
+	for _ = 1, attempts do -- e.g. 600 × 0.1s = 60s at the default max_wait_time of 60
+		local child =
+			Command("pgrep"):arg("-af"):arg("archivemount"):stdout(Command.PIPED):stderr(Command.PIPED):spawn()
+
+		if child then
+			local out = child:wait_with_output()
+			if out and not out.stdout:find(tmp_file, 1, true) then
+				return true -- archivemount for this mount point is gone
+			end
+		end
+
+		Command("sleep"):arg("0.1"):spawn():wait()
+	end
+
+	return false -- timed out
+end
 
 local selected_files = ya.sync(function()
 	local tab, paths = cx.active, {}
@@ -32,81 +72,194 @@ local selected_files = ya.sync(function()
 	return paths
 end)
 
-local function command_runner(cmd_args)
-	local cwd = state()
-	local child, err = Command(Shell_value)
+-- ---------------------------------------------------------------------
+-- Command execution
+-- ---------------------------------------------------------------------
+
+-- Spawns `cmd_args` through the user's shell (Shell_value -c) and waits
+-- for it to finish. Returns:
+--   ok      - true only if the process exited 0
+--   output  - Command's output table ({stdout, stderr, status}), or nil if
+--             the command never produced output (spawn/wait failure)
+--   err     - the underlying error value, only set when output is nil
+--   stage   - "spawn" | "wait" | "exit", identifying which step `err`
+--             (if any) came from — lets callers give a precise message
+local function run_shell(cmd_args, opts)
+	opts = opts or {}
+	local child, spawn_err = Command(Shell_value)
 		:arg({ "-c", cmd_args })
-		:cwd(cwd)
-		:stdin(Command.INHERIT)
-		:stdout(Command.PIPED)
-		:stderr(Command.INHERIT)
+		:cwd(opts.cwd or get_cwd())
+		:stdin(opts.stdin or Command.INHERIT)
+		:stdout(opts.stdout or Command.PIPED)
+		:stderr(opts.stderr or Command.PIPED)
 		:spawn()
 
 	if not child then
-		fail("Spawn `archivemounting` failed with error code %s. Do you have `tag` installed?", err)
-		return err, child
+		return false, nil, spawn_err, "spawn"
 	end
 
-	local output, err = child:wait_with_output()
+	local output, wait_err = child:wait_with_output()
 	if not output then
-		fail("Cannot read `archivemounting` output, error code %s", err)
-		return err, child
-	elseif not output.status.success and output.status.code ~= 131 then
-		fail("`archivemounting` exited with error code %s", output.status.code)
-		return output.status.code, output
-	else
-		return true, output
+		return false, nil, wait_err, "wait"
 	end
+
+	return output.status.success, output, nil, "exit"
 end
 
-local function valid_file(path, action)
-	-- Check if path is not nil or empty
+-- run_shell() wrapper for commands whose failure should be reported to the
+-- user via fail() — this is the ONLY place that reports command_runner
+-- failures;
+local function command_runner(cmd_args, label, subject)
+	label = label or "command"
+	local suffix = subject and (" (" .. subject .. ")") or ""
+	local ok, output, err, stage = run_shell(cmd_args)
+
+	if stage == "spawn" then
+		fail(
+			"Failed to start `%s`%s (error: %s). Check that any required tools are installed and on your $SHELL's PATH.",
+			label,
+			suffix,
+			tostring(err)
+		)
+		return false, err
+	elseif stage == "wait" then
+		fail("Cannot read `%s`%s output, error code %s", label, suffix, tostring(err))
+		return false, err
+	elseif not ok then
+		local detail = output.stderr and output.stderr:gsub("%s+$", "") or ""
+		if detail ~= "" then
+			fail("`%s`%s exited with error code %s: %s", label, suffix, output.status.code, detail)
+		else
+			fail("`%s`%s exited with error code %s", label, suffix, output.status.code)
+		end
+		return false, output.status.code
+	end
+
+	return true, output
+end
+
+-- run_shell() wrapper for commands we only want the output of, silently.
+-- Mirrors the old io.popen-based shell_capture: returns stdout even if the
+-- command exited non-zero (callers like command_exists rely on that — a
+-- missing binary is an expected, not exceptional, outcome), and returns
+-- nil only if the command couldn't be run/read at all.
+local function shell_capture(cmd, opts)
+	local _, output = run_shell(cmd, opts)
+	if not output then
+		return nil
+	end
+	return output.stdout
+end
+
+local function command_exists(bin)
+	local out = shell_capture("command -v " .. ya.quote(bin))
+	return out ~= nil and out:match("%S") ~= nil
+end
+
+-- Runs `bsdtar -tf` on the archive, retrying a few times with a short delay
+-- if it fails. A failure right after unmount is often the flush race above
+-- rather than real corruption, so a transient error shouldn't immediately
+-- be treated as "archive is broken" or "content mismatch". Returns the
+-- listing text on success, or nil plus the last error output if every
+-- attempt failed.
+local function bsdtar_list_with_retry(path, max_attempts, delay_seconds)
+	max_attempts = max_attempts or 5
+	delay_seconds = delay_seconds or 0.3
+	local bsdtar_cmd = "bsdtar -tf " .. ya.quote(path)
+	local last_err = nil
+
+	for attempt = 1, max_attempts do
+		local ok, output = run_shell(bsdtar_cmd)
+		if ok and output then
+			return output.stdout
+		end
+		last_err = output and output.stderr or last_err
+		if attempt < max_attempts then
+			Command("sleep"):arg(tostring(delay_seconds)):spawn():wait()
+		end
+	end
+
+	return nil, last_err
+end
+
+-- Plain (non-pattern) case-sensitive suffix check. The extension checks
+-- below used to do str:find(ext .. "$"), e.g. str:find(".zip$"). Lua
+-- patterns treat an unescaped "." as "match any character", not a literal
+-- dot, so that accepted false positives like "archiveXzip" (any single
+-- character standing in for the dot) as a valid .zip file. A plain suffix
+-- comparison sidesteps the pattern engine entirely and can't misfire like
+-- that.
+local function has_suffix(str, suffix)
+	return #str >= #suffix and str:sub(-#suffix) == suffix
+end
+
+-- Extension allow-list for the "mount" action. Split out from the old
+-- dual-purpose `valid_file(path, action)` for readability: this function
+-- only ever answers "is this a supported archive extension", and
+-- is_mounted() below only ever answers "is this path currently mounted".
+local function is_valid_archive_extension(path)
 	if not path or path == "" then
 		return false
 	end
-	if action == "mount" then
-		-- Extract the file extension
-		local valid_extensions = {
-			--rw
-			".zip",
-			".cbz", -- zip-based comic archive
-			".tar",
-			".tar.gz",
-			".tgz",
-			".tar.bz2",
-			--ro
-			".iso",
-			".7z",
-			".cb7", -- 7z based comic arhive
-			".rar",
-			".cbr", -- rar-based comic archive
-		}
 
-		-- Function to check if the file extension matches any of the valid extensions
-		local function has_valid_extension(_path)
-			for _, ext in ipairs(valid_extensions) do
-				if _path:find(ext .. "$") then
-					return true
-				end
-			end
-			return false
+	local valid_extensions = {
+		--rw
+		".zip",
+		".cbz", -- zip-based comic archive
+		".tar",
+		".tar.gz",
+		".tgz",
+		".tar.bz2",
+		--ro
+		".iso",
+		".7z",
+		".cb7", -- 7z based comic arhive
+		".rar",
+		".cbr", -- rar-based comic archive
+	}
+
+	for _, ext in ipairs(valid_extensions) do
+		if has_suffix(path, ext) then
+			return true
 		end
-		-- Extract the file extension, including compound extensions like .tar.gz
-		return has_valid_extension(path)
-	else
-		-- Use os.execute to run a shell command that checks if the path is mounted
-		local check_mount_cmd = "mount | grep " .. ya.quote(path) .. " 2>/dev/null" --ya.quote already shell-escapes the path
-		local handle = io.popen(check_mount_cmd, "r")
-		if handle then
-			local output = handle:read("*a") -- Read the entire output
-			handle:close()
-			if output and output ~= "" then
-				return true -- Path is mounted
-			else
-				return false -- Path is not mounted
+	end
+	return false
+end
+
+-- Runs `mount | grep -F path` once and reports both whether the path is
+-- currently mounted and whether its actual mount options include "ro".
+local function mount_info(path)
+	if not path or path == "" then
+		return false, false
+	end
+
+	local ok, output = run_shell("mount | grep -F " .. ya.quote(path))
+	if not ok or not output or not output.stdout or output.stdout == "" then
+		return false, false
+	end
+
+	-- If more than one line matched (shouldn't normally happen for a
+	-- specific mountpoint path), take the last one as the current state.
+	local last_line = nil
+	for line in output.stdout:gmatch("[^\r\n]+") do
+		last_line = line
+	end
+
+	local readonly = false
+	if last_line then
+		-- e.g. "archivemount on /x.tmp1a2b type fuse.archivemount (rw,nosuid,...)"
+		local opts = last_line:match("%(([^()]*)%)%s*$")
+		if opts then
+			for opt in opts:gmatch("[^,]+") do
+				if opt == "ro" then
+					readonly = true
+					break
+				end
 			end
 		end
 	end
+
+	return true, readonly
 end
 
 local function file_exists(filename)
@@ -121,21 +274,6 @@ end
 
 --Removed zip to tar rename, archivemount-ng works with zip directly
 
-local function shell_capture(cmd)
-	local handle = io.popen(cmd .. " 2>/dev/null")
-	if not handle then
-		return nil
-	end
-	local out = handle:read("*a")
-	handle:close()
-	return out
-end
-
-local function command_exists(bin)
-	local out = shell_capture("command -v " .. bin)
-	return out ~= nil and out:match("%S") ~= nil
-end
-
 local readonly_extensions = { ".7z", ".cb7", ".rar", ".cbr", ".iso" }
 local function is_readonly_format(path)
 	if not path then
@@ -143,11 +281,32 @@ local function is_readonly_format(path)
 	end
 	local path_to_lower = path:lower()
 	for _, ext in ipairs(readonly_extensions) do
-		if path_to_lower:find(ext .. "$") then
+		if has_suffix(path_to_lower, ext) then
 			return true
 		end
 	end
 	return false
+end
+
+-- Normalizes paths
+--   * backslashes -> forward slashes (zips built on Windows use "\")
+--   * strips a leading "./"          (tar-style relative prefix)
+--   * strips any leading "/"         (archives storing absolute-looking paths)
+--   * strips duplicate internal slashes ("a//b" -> "a/b")
+--   * strips trailing slash(es)      (directory marker, stripped after use)
+-- Returns two values: the cleaned-up path (original casing, used for
+-- display in messages) and a lowercased version (used as the comparison
+-- key).
+local function normalize_entry(raw)
+	if not raw then
+		return nil, nil
+	end
+	local p = raw:gsub("\\", "/")
+	p = p:gsub("^%./", "")
+	p = p:gsub("^/+", "")
+	p = p:gsub("//+", "/")
+	p = p:gsub("/+$", "")
+	return p, p:lower()
 end
 
 -- Turns newline-separated text into a set (table keyed by line, true value)
@@ -156,8 +315,9 @@ local function lines_to_set(text)
 	local set, count = {}, 0
 	if text then
 		for line in text:gmatch("[^\r\n]+") do
-			if line ~= "" then
-				set[line] = true
+			local entry, key = normalize_entry(line) -- added normalization
+			if key and key ~= "" then
+				set[key] = entry
 				count = count + 1
 			end
 		end
@@ -165,16 +325,35 @@ local function lines_to_set(text)
 	return set, count
 end
 
+-- Builds a set of file paths (directories excluded) from `bsdtar -tf`
+-- output, keyed by a case-folded, normalized path. Works across archive
+-- formats/OSes: zip, tar, 7z, rar, iso, etc. can each mark directories
+-- differently, so we check for a trailing slash *or* backslash before
+-- normalizing (normalizing would otherwise strip that marker and
+-- misclassify the entry as a file).
+local function archive_listing_to_set(text)
+	local set = {}
+	if text then
+		for line in text:gmatch("[^\r\n]+") do
+			local is_dir = line:match("[/\\]%s*$") ~= nil
+			local entry, key = normalize_entry(line)
+			if key and key ~= "" and not is_dir then
+				set[key] = entry
+			end
+		end
+	end
+	return set
+end
+
 local function tmp(path)
 	local time_now = os.time()
 	local hex_time = string.format("%x", time_now)
 	local tmp_path = path .. ".tmp" .. hex_time
 
-	local cmd_args = "mkdir " .. ya.quote(tmp_path)
-
-	local output, err = command_runner(cmd_args)
-	if not output then
-		fail("Cannot create tmp file %s", tmp_path)
+	local ok = command_runner("mkdir " .. ya.quote(tmp_path), "mkdir", tmp_path)
+	if not ok then
+		-- command_runner() already reported the failure via fail(),
+		-- with tmp_path included as context — nothing more to add.
 		return
 	end
 	return tmp_path
@@ -185,8 +364,7 @@ end
 -- "discard" action and automatically when a save was requested on a mount
 -- that turned out to be read-only (so nothing could have been saved anyway).
 local function unmount_and_discard(tmp_file, original_file, prefix)
-	local cmd_args = "fusermount -u " .. ya.quote(tmp_file)
-	local success, err = command_runner(cmd_args)
+	local success = command_runner("fusermount -u " .. ya.quote(tmp_file), "fusermount", tmp_file)
 	if success then
 		local message = prefix or "Unmounted."
 		if original_file then
@@ -227,7 +405,7 @@ local function do_mount(path, readonly)
 	end
 	local mount_opts = readonly and "-o ro " or ""
 	local cmd_args = "archivemount " .. mount_opts .. ya.quote(path) .. " " .. ya.quote(tmp_file)
-	local success, output = command_runner(cmd_args)
+	local success = command_runner(cmd_args, "archivemount", path)
 	if success then
 		local mount_message = "Mounting successful. Please unmount back the tmp file created."
 		if readonly then
@@ -237,10 +415,21 @@ local function do_mount(path, readonly)
 	end
 end
 
-local function setup(_, opts)
+local function setup(state, opts)
 	opts = opts or {}
+	state.config = {
+		keep_orig_backup = default_config.keep_orig_backup,
+		verify_content = default_config.verify_content,
+		max_wait_time = default_config.max_wait_time,
+	}
 	if opts.keep_orig_backup ~= nil then
-		config.keep_orig_backup = opts.keep_orig_backup
+		state.config.keep_orig_backup = opts.keep_orig_backup
+	end
+	if opts.verify_content ~= nil then
+		state.config.verify_content = opts.verify_content
+	end
+	if opts.max_wait_time ~= nil then
+		state.config.max_wait_time = opts.max_wait_time
 	end
 
 	local function getmp()
@@ -250,7 +439,7 @@ local function setup(_, opts)
 		--changing montpoint check logic to regex matching to stop mount | grep commands on each hover
 		--we defined how folders are named so we can just check names here
 		local is_mp = path ~= nil and path:match("%.tmp%x+$") ~= nil
-		local is_archive = valid_file(files[1], "mount") -- to check if directory is a valid mountpoint or not
+		local is_archive = is_valid_archive_extension(path) -- to check if directory is a valid mountpoint or not
 
 		local mount_text = ""
 		if is_mp == true and is_archive == false then
@@ -270,6 +459,8 @@ return {
 			return
 		end
 
+		local config = get_config()
+
 		local files = selected_files()
 		if #files == 0 then
 			notify("No files selected.")
@@ -282,7 +473,7 @@ return {
 		local selected = files[1]
 
 		if action == "mount" then
-			if not valid_file(selected, "mount") then
+			if not is_valid_archive_extension(selected) then
 				fail("Selected file is not a valid/supported archive")
 				return
 			end
@@ -307,35 +498,35 @@ return {
 			end
 
 			do_mount(selected, false)
-		end
-
-		if action == "mount_ro" then
-			if not valid_file(selected, "mount") then
+		elseif action == "mount_ro" then
+			if not is_valid_archive_extension(selected) then
 				fail("Selected file is not valid/supported archive")
 				return
 			end
 			do_mount(selected, true)
-		end
-
-		if action == "unmount" then
+		elseif action == "unmount" then
 			-- `selected` is the mountpoint here (the ".tmp<hex>" directory
 			-- the user is unmounting), not the original archive.
 			local mount_point = selected
 
-			if not valid_file(mount_point, "unmount") then
+			local mounted, mount_is_ro = mount_info(mount_point)
+			if not mounted then
 				fail("Selected file is not valid for unmounting")
 				return
 			end
 
-			local cmd_args = "fusermount -u " .. ya.quote(mount_point)
 			local success_message = "Unmounting successful"
 
 			-- Strip the ".tmp<hex>" suffix to recover the original archive path.
 			local original_file = mount_point:match("^(.*)%.tmp%x+$")
 
-			-- readonly mounts just need rolder removal
-			if is_readonly_format(original_file) then
-				local success, err = command_runner(cmd_args)
+			-- Read-only mounts (whether the format forced it, e.g. .7z/.rar,
+			-- or the user chose "mount_ro" on an otherwise-writable format
+			-- like .zip) can't have changed, so just unmount and remove the
+			-- tmp dir — no point running content verification or backup
+			-- cleanup against a mount nothing could have written to.
+			if mount_is_ro then
+				local success = command_runner("fusermount -u " .. ya.quote(mount_point), "fusermount", mount_point)
 				if success then
 					notify("Unmounted (read-only mount, no changes were possible).")
 				end
@@ -346,87 +537,107 @@ return {
 				return
 			end
 
-			-- Removing .Trash folder in case yazi deletes to trash
+			-- Removing .Trash folder in case yazi deletes to trash. Non-fatal:
+			-- command_runner() already notifies on failure, and unmounting
+			-- proceeds regardless — leftover trash dirs don't block it.
 			local trash_cleanup_cmd = "find "
 				.. ya.quote(mount_point)
 				.. " -maxdepth 1 -type d \\( -iname '.Trash-*' -o -iname '.Trash' \\) -exec rm -rf {} +"
-			local trash_ok, trash_err = command_runner(trash_cleanup_cmd)
-			if not trash_ok then
-				fail("Could not clean up trash dirs before unmounting: %s", tostring(trash_err))
-			end
+			command_runner(trash_cleanup_cmd, "trash cleanup", mount_point)
 
 			-- checking content of mounted filesystem to match in to content of archive
-			local verify_available = command_exists("bsdtar") --bsdtar, because it supports all formats
+			local verify_available = config.verify_content and command_exists("bsdtar") --bsdtar, because it supports all formats
 			local pre_set, pre_count
 			if verify_available then
-				local pre_listing = shell_capture("find " .. ya.quote(mount_point) .. " -type f -printf '%P\\n'")
+				-- `find . -type f` is POSIX-portable on both linux and mac; the "./" prefix
+				-- it produces is already stripped by normalize_entry.
+				local find_cmd = "cd " .. ya.quote(mount_point) .. " && find . -type f"
+				local pre_listing = shell_capture(find_cmd)
 				pre_set, pre_count = lines_to_set(pre_listing)
 			end
 
-			local success, err = command_runner(cmd_args)
+			local success = command_runner("fusermount -u " .. ya.quote(mount_point), "fusermount", mount_point)
 			if success then
+				local verification_skipped = false
+
+				-- `fusermount -u` returning doesn't guarantee archivemount has
+				-- finished writing pending changes back to the archive file —
+				-- give it a moment to actually exit before reading the archive.
+				-- Only worth waiting for if we're actually going to verify.
+				if verify_available and not wait_for_archivemount_exit(mount_point, config.max_wait_time) then
+					fail(
+						"archivemount process for %s did not exit in time after unmounting; skipping content verification to avoid a false mismatch.",
+						mount_point
+					)
+					verify_available = false
+					verification_skipped = true
+				end
+
 				-- checking if content of mounted file system matches content of array won't check empty folders and symlinks
 				local verified_ok = true -- base state = true
 				if verify_available and original_file and pre_set then
-					local archive_listing = shell_capture("bsdtar -tf " .. ya.quote(original_file))
-					local archive_set, archive_count = {}, 0
-					if archive_listing then
-						for line in archive_listing:gmatch("[^\r\n]+") do
-							local entry = line:gsub("^%./", "")
-							-- Skip directory entries (trailing "/"); we only compare files.
-							if entry ~= "" and not entry:match("/$") then
-								archive_set[entry] = true
-								archive_count = archive_count + 1
-							end
-						end
-					end
-
-					local missing, extra = {}, {}
-					for f in pairs(pre_set) do
-						if not archive_set[f] then
-							missing[#missing + 1] = f
-						end
-					end
-					for f in pairs(archive_set) do
-						if not pre_set[f] then
-							extra[#extra + 1] = f
-						end
-					end
-
-					if #missing > 0 or #extra > 0 then
-						verified_ok = false
-						local msg = string.format(
-							"Archive contents don't match the mount! %d missing, %d extra.",
-							#missing,
-							#extra
-						)
-						if #missing > 0 then
-							table.sort(missing)
-							msg = msg .. " Missing: " .. table.concat(missing, ", ", 1, math.min(3, #missing))
-							if #missing > 3 then
-								msg = msg .. string.format(" (+%d more)", #missing - 3)
-							end
-						end
-						if #extra > 0 then
-							table.sort(extra)
-							msg = msg .. " Extra: " .. table.concat(extra, ", ", 1, math.min(3, #extra))
-							if #extra > 3 then
-								msg = msg .. string.format(" (+%d more)", #extra - 3)
-							end
-						end
-						if original_file and file_exists(original_file .. ".orig") then
-							msg = msg .. " Backup kept at " .. original_file .. ".orig — NOT deleted."
-						end
-						fail(msg)
+					local archive_listing, bsdtar_err = bsdtar_list_with_retry(original_file)
+					if not archive_listing then
+						verification_skipped = true
+						success_message = success_message
+							.. string.format(
+								". (Skipped content verification: bsdtar could not read the archive after several attempts — %s)",
+								(bsdtar_err and bsdtar_err:gsub("%s+$", "")) or "unknown error"
+							)
 					else
-						success_message = success_message .. string.format(". Verified: %d files match.", pre_count)
+						local archive_set = archive_listing_to_set(archive_listing)
+
+						local missing, extra = {}, {}
+						for key, display_name in pairs(pre_set) do
+							if not archive_set[key] then
+								missing[#missing + 1] = display_name
+							end
+						end
+						for key, display_name in pairs(archive_set) do
+							if not pre_set[key] then
+								extra[#extra + 1] = display_name
+							end
+						end
+
+						if #missing > 0 or #extra > 0 then
+							verified_ok = false
+							local msg = string.format(
+								"Archive contents don't match the mount! %d missing, %d extra.",
+								#missing,
+								#extra
+							)
+							if #missing > 0 then
+								table.sort(missing)
+								msg = msg .. " Missing: " .. table.concat(missing, ", ", 1, math.min(3, #missing))
+								if #missing > 3 then
+									msg = msg .. string.format(" (+%d more)", #missing - 3)
+								end
+							end
+							if #extra > 0 then
+								table.sort(extra)
+								msg = msg .. " Extra: " .. table.concat(extra, ", ", 1, math.min(3, #extra))
+								if #extra > 3 then
+									msg = msg .. string.format(" (+%d more)", #extra - 3)
+								end
+							end
+							if original_file and file_exists(original_file .. ".orig") then
+								msg = msg .. " Backup kept at " .. original_file .. ".orig — NOT deleted."
+							end
+							fail(msg)
+						else
+							success_message = success_message .. string.format(". Verified: %d files match.", pre_count)
+						end
 					end
 				elseif not verify_available then
-					success_message = success_message .. ". (Install bsdtar to enable content verification.)"
+					if not config.verify_content then
+						success_message = success_message .. ". (Content verification disabled.)"
+					else
+						success_message = success_message .. ". (Install bsdtar to enable content verification.)"
+					end
 				end
 
 				-- for settings options of .orig file removal, we check archive content now, so i added it
-				if verified_ok and not config.keep_orig_backup and original_file then
+				if verified_ok and not verification_skipped and not config.keep_orig_backup and original_file then
 					local orig_backup = original_file .. ".orig"
 					if file_exists(orig_backup) then
 						local removed, rm_err = os.remove(orig_backup)
@@ -439,22 +650,21 @@ return {
 				end
 
 				notify(success_message)
-			else
-				fail("Unmounting failed with error code %s", err)
 			end
+			-- else: command_runner() already reported the fusermount
+			-- failure via fail(), with mount_point included as context.
 
 			local deleted, errd = os.remove(mount_point)
 			if not deleted then
 				fail("Cannot delete tmp file %s, error code %s", mount_point, errd)
 			end
 			return
-		end
-
-		if action == "discard" then
+		elseif action == "discard" then
 			-- `selected` is the mountpoint here too.
 			local mount_point = selected
 
-			if not valid_file(mount_point, "unmount") then
+			local is_mounted = mount_info(mount_point)
+			if not is_mounted then
 				fail("Selected file is not a valid mountpoint")
 				return
 			end
@@ -469,6 +679,8 @@ return {
 				fail("Cannot delete tmp file %s, error code %s", mount_point, errd)
 			end
 			return
+		else
+			fail("Unknown action: %s", tostring(action))
 		end
 	end,
 	setup = setup,
